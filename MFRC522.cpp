@@ -6,7 +6,6 @@
 
 #include <Arduino.h>
 #include <MFRC522.h>
-#include <avr/pgmspace.h>
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Functions for setting up the Arduino
@@ -101,7 +100,7 @@ void MFRC522::PCD_ReadRegister(	byte reg,		///< The register to read from. One o
 	if (count == 0) {
 		return;
 	}
-	//Serial.print("Reading "); 	Serial.print(count); Serial.println(" bytes from register.");
+	//Serial.print(F("Reading ")); 	Serial.print(count); Serial.println(" bytes from register.");
 	byte address = 0x80 | (reg & 0x7E);		// MSB == 1 is for reading. LSB is not used in address. Datasheet section 8.1.2.3.
 	byte index = 0;							// Index in values array.
 	digitalWrite(_chipSelectPin, LOW);		// Select slave
@@ -1073,11 +1072,20 @@ byte MFRC522::PCD_MIFARE_Transceive(	byte *sendData,		///< Pointer to the data t
  */
 const char *MFRC522::GetStatusCodeName(byte code	///< One of the StatusCode enums.
 										) {
-	if (code == 0 || code > STATUS_MIFARE_NACK) {
-		return "Unknown error";
+	switch (code) {
+		case STATUS_OK:				return "Success."; break;
+		case STATUS_ERROR:			return "Error in communication."; break;
+		case STATUS_COLLISION:		return "Collission detected."; break;
+		case STATUS_TIMEOUT:		return "Timeout in communication."; break;
+		case STATUS_NO_ROOM:		return "A buffer is not big enough."; break;
+		case STATUS_INTERNAL_ERROR:	return "Internal error in the code. Should not happen."; break;
+		case STATUS_INVALID:		return "Invalid argument."; break;
+		case STATUS_CRC_WRONG:		return "The CRC_A does not match."; break;
+		case STATUS_MIFARE_NACK:	return "A MIFARE PICC responded with NAK."; break;
+		default:
+			return "Unknown error";
+			break;
 	}
-	strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_StatusCodeName[code - 1])));
-	return stringBuffer;
 } // End GetStatusCodeName()
 
 /**
@@ -1119,12 +1127,19 @@ byte MFRC522::PICC_GetType(byte sak		///< The SAK byte returned from PICC_Select
  */
 const char *MFRC522::PICC_GetTypeName(byte piccType	///< One of the PICC_Type enums.
 										) {
-	if (piccType == PICC_TYPE_UNKNOWN) {
-		strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_PICC_TYPE_NOT_COMPLETE])));
-	} else {
-		strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_PICC_TypeName[piccType])));
+	switch (piccType) {
+		case PICC_TYPE_ISO_14443_4:		return "PICC compliant with ISO/IEC 14443-4";		break;
+		case PICC_TYPE_ISO_18092:		return "PICC compliant with ISO/IEC 18092 (NFC)";	break;
+		case PICC_TYPE_MIFARE_MINI:		return "MIFARE Mini, 320 bytes";					break;
+		case PICC_TYPE_MIFARE_1K:		return "MIFARE 1KB";								break;
+		case PICC_TYPE_MIFARE_4K:		return "MIFARE 4KB";								break;
+		case PICC_TYPE_MIFARE_UL:		return "MIFARE Ultralight or Ultralight C";			break;
+		case PICC_TYPE_MIFARE_PLUS:		return "MIFARE Plus";								break;
+		case PICC_TYPE_TNP3XXX:			return "MIFARE TNP3XXX";							break;
+		case PICC_TYPE_NOT_COMPLETE:	return "SAK indicates UID is not complete.";		break;
+		case PICC_TYPE_UNKNOWN:
+		default:						return "Unknown type";								break;
 	}
-	return stringBuffer;
 } // End PICC_GetTypeName()
 
 /**
@@ -1137,16 +1152,18 @@ void MFRC522::PICC_DumpToSerial(Uid *uid	///< Pointer to Uid struct returned fro
 	MIFARE_Key key;
 	
 	// UID
-	Serial.print("Card UID:");
+	Serial.print(F("Card UID:"));
+	
 	for (byte i = 0; i < uid->size; i++) {
 		Serial.print(uid->uidByte[i] < 0x10 ? " 0" : " ");
 		Serial.print(uid->uidByte[i], HEX);
 	} 
+	
 	Serial.println();
 
 	// PICC type
 	byte piccType = PICC_GetType(uid->sak);
-	Serial.print("PICC type: ");
+	Serial.print(F("PICC type: "));
 	Serial.println(PICC_GetTypeName(piccType));
 	
 	// Dump contents
@@ -1169,8 +1186,7 @@ void MFRC522::PICC_DumpToSerial(Uid *uid	///< Pointer to Uid struct returned fro
 		case PICC_TYPE_ISO_18092:
 		case PICC_TYPE_MIFARE_PLUS:
 		case PICC_TYPE_TNP3XXX:
-			strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_PICC_TYPE_TNP3XXX])));
-			Serial.println(stringBuffer);
+			Serial.println(F("Dumping memory contents not implemented for that PICC type."));
 			break;
 			
 		case PICC_TYPE_UNKNOWN:
@@ -1214,7 +1230,7 @@ void MFRC522::PICC_DumpMifareClassicToSerial(	Uid *uid,		///< Pointer to Uid str
 	
 	// Dump sectors, highest address first.
 	if (no_of_sectors) {
-		Serial.println("Sector Block   0  1  2  3   4  5  6  7   8  9 10 11  12 13 14 15  AccessBits");
+		Serial.println(F("Sector Block   0  1  2  3   4  5  6  7   8  9 10 11  12 13 14 15  AccessBits"));
 		for (char i = no_of_sectors - 1; i >= 0; i--) {
 			PICC_DumpMifareClassicSectorToSerial(uid, key, i);
 		}
@@ -1276,20 +1292,20 @@ void MFRC522::PICC_DumpMifareClassicSectorToSerial(Uid *uid,			///< Pointer to U
 		if (isSectorTrailer) {
 			Serial.print(sector < 10 ? "   " : "  "); // Pad with spaces
 			Serial.print(sector);
-			Serial.print("   ");
+			Serial.print(F("   "));
 		}
 		else {
-			Serial.print("       ");
+			Serial.print(F("       "));
 		}
 		// Block number
 		Serial.print(blockAddr < 10 ? "   " : (blockAddr < 100 ? "  "	 : " ")); // Pad with spaces
 		Serial.print(blockAddr);
-		Serial.print("  ");
+		Serial.print(F("  "));
 		// Establish encrypted communications before reading the first block
 		if (isSectorTrailer) {
 			status = PCD_Authenticate(PICC_CMD_MF_AUTH_KEY_A, firstBlock, key, uid);
 			if (status != STATUS_OK) {
-				Serial.print("PCD_Authenticate() failed: ");
+				Serial.print(F("PCD_Authenticate() failed: "));
 				Serial.println(GetStatusCodeName(status));
 				return;
 			}
@@ -1298,7 +1314,7 @@ void MFRC522::PICC_DumpMifareClassicSectorToSerial(Uid *uid,			///< Pointer to U
 		byteCount = sizeof(buffer);
 		status = MIFARE_Read(blockAddr, buffer, &byteCount);
 		if (status != STATUS_OK) {
-			Serial.print("MIFARE_Read() failed: ");
+			Serial.print(F("MIFARE_Read() failed: "));
 			Serial.println(GetStatusCodeName(status));
 			continue;
 		}
@@ -1307,7 +1323,7 @@ void MFRC522::PICC_DumpMifareClassicSectorToSerial(Uid *uid,			///< Pointer to U
 			Serial.print(buffer[index] < 0x10 ? " 0" : " ");
 			Serial.print(buffer[index], HEX);
 			if ((index % 4) == 3) {
-				Serial.print(" ");
+				Serial.print(F(" "));
 			}
 		}
 		// Parse sector trailer data
@@ -1338,20 +1354,20 @@ void MFRC522::PICC_DumpMifareClassicSectorToSerial(Uid *uid,			///< Pointer to U
 		
 		if (firstInGroup) {
 			// Print access bits
-			Serial.print(" [ ");
+			Serial.print(F(" [ "));
 			Serial.print((g[group] >> 2) & 1, DEC); Serial.print(" ");
 			Serial.print((g[group] >> 1) & 1, DEC); Serial.print(" ");
 			Serial.print((g[group] >> 0) & 1, DEC);
-			Serial.print(" ] ");
+			Serial.print(F(" ] "));
 			if (invertedError) {
-				Serial.print(" Inverted access bits did not match! ");
+				Serial.print(F(" Inverted access bits did not match! "));
 			}
 		}
 		
 		if (group != 3 && (g[group] == 1 || g[group] == 6)) { // Not a sector trailer, a value block
 			long value = (long(buffer[3])<<24) | (long(buffer[2])<<16) | (long(buffer[1])<<8) | long(buffer[0]);
-			Serial.print(" Value=0x"); Serial.print(value, HEX);
-			Serial.print(" Adr=0x"); Serial.print(buffer[12], HEX);
+			Serial.print(F(" Value=0x")); Serial.print(value, HEX);
+			Serial.print(F(" Adr=0x")); Serial.print(buffer[12], HEX);
 		}
 		Serial.println();
 	}
@@ -1368,14 +1384,14 @@ void MFRC522::PICC_DumpMifareUltralightToSerial() {
 	byte buffer[18];
 	byte i;
 
-	Serial.println("Page  0  1  2  3");
+	Serial.println(F("Page  0  1  2  3"));
 	// Try the mpages of the original Ultralight. Ultralight C has more pages.
 	for (byte page = 0; page < 16; page +=4) { // Read returns data for 4 pages at a time.
 		// Read pages
 		byteCount = sizeof(buffer);
 		status = MIFARE_Read(page, buffer, &byteCount);
 		if (status != STATUS_OK) {
-			Serial.print("MIFARE_Read() failed: ");
+			Serial.print(F("MIFARE_Read() failed: "));
 			Serial.println(GetStatusCodeName(status));
 			break;
 		}
@@ -1384,7 +1400,7 @@ void MFRC522::PICC_DumpMifareUltralightToSerial() {
 			i = page + offset;
 			Serial.print(i < 10 ? "  " : " "); // Pad with spaces
 			Serial.print(i);
-			Serial.print("  ");
+			Serial.print(F("  "));
 			for (byte index = 0; index < 4; index++) {
 				i = 4 * offset + index;
 				Serial.print(buffer[i] < 0x10 ? " 0" : " ");
@@ -1444,21 +1460,19 @@ bool MFRC522::MIFARE_OpenUidBackdoor(bool logErrors) {
     byte status = PCD_TransceiveData(&cmd, (byte)1, response, &received, &validBits, (byte)0, false); // 40
     if( status != STATUS_OK ) {
         if( logErrors ) {
-            strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_NO_RESPONSE_AFTER_HALT])));
-            Serial.println(stringBuffer);
-            Serial.print("Error name: ");
+            Serial.println(F("Card did not respond to 0x40 after HALT command. Are you sure it is a UID changeable one?"));
+            Serial.print(F("Error name: "));
             Serial.println(GetStatusCodeName(status));
         }
         return false;
     }
     if ( received != 1 || response[0] != 0x0A ) {
         if ( logErrors ) {
-            strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_COMMAND_0x40_RESPONSE])));
-            Serial.print(stringBuffer);
+            Serial.print(F("Got bad response on backdoor 0x40 command: "));
             Serial.print(response[0], HEX);
-            Serial.print(" (");
+            Serial.print(F(" ("));
             Serial.print(validBits);
-            Serial.print(" valid bits)\r\n");
+            Serial.print(F(" valid bits)\r\n"));
         }
         return false;
     }
@@ -1468,21 +1482,19 @@ bool MFRC522::MIFARE_OpenUidBackdoor(bool logErrors) {
     status = PCD_TransceiveData(&cmd, (byte)1, response, &received, &validBits, (byte)0, false); // 43
     if( status != STATUS_OK ) {
         if( logErrors ) {
-            strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_COMMAND_0x43_COMM])));
-            Serial.println(stringBuffer);
-            Serial.print("Error name: ");
+            Serial.println(F("Error in communication at command 0x43, after successfully executing 0x40"));
+            Serial.print(F("Error name: "));
             Serial.println(GetStatusCodeName(status));
         }
         return false;
     }
     if ( received != 1 || response[0] != 0x0A ) {
         if ( logErrors ) {
-            strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_COMMAND_0x43_RESPONSE])));
-            Serial.print(stringBuffer);
+            Serial.print(F("Got bad response on backdoor 0x43 command: "));
             Serial.print(response[0], HEX);
-            Serial.print(" (");
+            Serial.print(F(" ("));
             Serial.print(validBits);
-            Serial.print(" valid bits)\r\n");
+            Serial.print(F(" valid bits)\r\n"));
         }
         return false;
     }
@@ -1504,8 +1516,7 @@ bool MFRC522::MIFARE_SetUid(byte* newUid, byte uidSize, bool logErrors) {
     // UID + BCC byte can not be larger than 16 together
     if ( !newUid || !uidSize || uidSize > 15) {
         if ( logErrors ) {
-            strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_WRONG_UID])));
-            Serial.println(stringBuffer);
+            Serial.println(F("New UID buffer empty, size 0, or size > 15 given"));
         }
         return false;
     }
@@ -1524,8 +1535,7 @@ bool MFRC522::MIFARE_SetUid(byte* newUid, byte uidSize, bool logErrors) {
 //            PICC_WakeupA(atqa_answer, &atqa_size);
             
             if ( !PICC_IsNewCardPresent() || !PICC_ReadCardSerial() ) {
-                strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_NO_CARD])));
-                Serial.println(stringBuffer);
+                Serial.println(F("No card was previously selected, and none are available. Failed to set UID."));
                 return false;
             }
             
@@ -1533,8 +1543,7 @@ bool MFRC522::MIFARE_SetUid(byte* newUid, byte uidSize, bool logErrors) {
             if ( status != STATUS_OK ) {
                 // We tried, time to give up
                 if ( logErrors ) {
-                    strcpy_P(stringBuffer, (char*)pgm_read_word(&(_MFRC522_str_Error[ERR_AUTH_KEY_A])));
-                    Serial.println(stringBuffer);
+                    Serial.println(F("Failed to authenticate to card for reading, could not set UID: "));
                     Serial.println(GetStatusCodeName(status));
                 }
                 return false;
@@ -1542,7 +1551,7 @@ bool MFRC522::MIFARE_SetUid(byte* newUid, byte uidSize, bool logErrors) {
         }
         else {
             if ( logErrors ) {
-                Serial.print("PCD_Authenticate() failed: ");
+                Serial.print(F("PCD_Authenticate() failed: "));
                 Serial.println(GetStatusCodeName(status));
             }
             return false;
@@ -1555,9 +1564,9 @@ bool MFRC522::MIFARE_SetUid(byte* newUid, byte uidSize, bool logErrors) {
     status = MIFARE_Read((byte)0, block0_buffer, &byteCount);
     if ( status != STATUS_OK ) {
         if ( logErrors ) {
-            Serial.print("MIFARE_Read() failed: ");
+            Serial.print(F("MIFARE_Read() failed: "));
             Serial.println(GetStatusCodeName(status));
-            Serial.println("Are you sure your KEY A for sector 0 is 0xFFFFFFFFFFFF?");
+            Serial.println(F("Are you sure your KEY A for sector 0 is 0xFFFFFFFFFFFF?"));
         }
         return false;
     }
@@ -1578,7 +1587,7 @@ bool MFRC522::MIFARE_SetUid(byte* newUid, byte uidSize, bool logErrors) {
     // Activate UID backdoor
     if ( !MIFARE_OpenUidBackdoor(logErrors) ) {
         if ( logErrors ) {
-            Serial.println("Activating the UID backdoor failed.");
+            Serial.println(F("Activating the UID backdoor failed."));
         }
         return false;
     }
@@ -1587,7 +1596,7 @@ bool MFRC522::MIFARE_SetUid(byte* newUid, byte uidSize, bool logErrors) {
     status = MIFARE_Write((byte)0, block0_buffer, (byte)16);
     if (status != STATUS_OK) {
         if ( logErrors ) {
-            Serial.print("MIFARE_Write() failed: ");
+            Serial.print(F("MIFARE_Write() failed: "));
             Serial.println(GetStatusCodeName(status));
         }
         return false;
@@ -1613,7 +1622,7 @@ bool MFRC522::MIFARE_UnbrickUidSector(bool logErrors) {
     byte status = MIFARE_Write((byte)0, block0_buffer, (byte)16);
     if (status != STATUS_OK) {
         if ( logErrors ) {
-            Serial.print("MIFARE_Write() failed: ");
+            Serial.print(F("MIFARE_Write() failed: "));
             Serial.println(GetStatusCodeName(status));
         }
         return false;
